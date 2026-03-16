@@ -1,18 +1,28 @@
 name: AIPICK_Update
+
 on:
   schedule:
-    - cron: '0 21 * * *'
-  workflow_dispatch:
+    - cron: '0 21 * * *' # 매일 아침 9시(한국시간) 자동 실행
+  workflow_dispatch:      # 수동 실행 버튼 생성
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
-      - run: pip install -r requirements.txt
-      - run: python main.py
+          python-version: '3.10' # 버전을 3.10으로 올려서 경고를 없앱니다.
+
+      - name: Install dependencies
+        run: |
+          pip install google-api-python-client gspread oauth2client pandas
+
+      - name: Run Python Script
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GOOGLE_SHEETS_JSON: ${{ secrets.GOOGLE_SHEETS_JSON }}
+        run: python main.py
