@@ -12,6 +12,14 @@ def run():
     api_key = os.environ.get("YOUTUBE_API_KEY")
     json_creds = os.environ.get("GOOGLE_SHEETS_JSON")
     
+    # API 키가 제대로 로드되었는지 확인
+    if not api_key:
+        print("X 에러: YOUTUBE_API_KEY가 비어있습니다. GitHub Secrets 설정을 확인하세요.")
+        return
+    else:
+        # 보안을 위해 앞글자만 출력해서 확인
+        print(f"1. API 키 확인 완료 (앞글자: {api_key[:5]}...)")
+
     # 2. 구글 시트 연결
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -19,27 +27,33 @@ def run():
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         
-        # 파일 열기
         doc = client.open("AIPICK_Database")
-        # ★핵심수정: 이름을 따지지 않고 '첫 번째 탭'을 무조건 선택합니다.
-        sheet = doc.get_worksheet(0) 
-        print(f"1. 시트 연결 성공 (탭 이름: {sheet.title})")
+        sheet = doc.get_worksheet(0) # 첫 번째 탭
+        print(f"2. 시트 연결 성공 (탭 이름: {sheet.title})")
     except Exception as e:
         print(f"X 시트 연결 실패: {e}")
         return
 
     # 3. 유튜브 데이터 수집
     all_rows = []
-    # 검색어를 더 단순하게 'AI'로 변경 (가장 많이 검색됨)
-    search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=50&q=AI+shorts&type=video&videoDuration=short&order=viewCount&key={api_key}"
+    # 주소에 직접 API 키를 넣는 방식
+    search_url = "https://www.googleapis.com/youtube/v3/search"
+    params = {
+        'part': 'snippet',
+        'maxResults': 50,
+        'q': 'AI shorts',
+        'type': 'video',
+        'videoDuration': 'short',
+        'order': 'viewCount',
+        'key': api_key
+    }
     
     try:
-        print("2. 유튜브 데이터 가져오는 중...")
-        response = requests.get(search_url).json()
+        print("3. 유튜브 데이터 요청 중...")
+        response = requests.get(search_url, params=params).json()
         
-        # API 에러 확인용 로그
         if "error" in response:
-            print(f"X 유튜브 API 에러: {response['error']['message']}")
+            print(f"X 유튜브 API 에러 발생: {response['error']['message']}")
             return
 
         items = response.get('items', [])
@@ -49,8 +63,13 @@ def run():
             video_ids = [item['id']['videoId'] for item in items]
             ids_str = ",".join(video_ids)
             
-            stats_url = f"https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id={ids_str}&key={api_key}"
-            stats_res = requests.get(stats_url).json()
+            stats_url = "https://www.googleapis.com/youtube/v3/videos"
+            stats_params = {
+                'part': 'statistics,snippet',
+                'id': ids_str,
+                'key': api_key
+            }
+            stats_res = requests.get(stats_url, params=stats_params).json()
             
             for video in stats_res.get('items', []):
                 v_id = video['id']
@@ -60,7 +79,6 @@ def run():
                 
                 views = int(stats.get('viewCount', 0))
                 likes = int(stats.get('likeCount', 0))
-                # 점수 계산
                 score = round((likes/views*1000) + (views*0.00001), 2) if views > 0 else 0
                 
                 all_rows.append([
@@ -69,24 +87,17 @@ def run():
                     views, likes, score, str(datetime.date.today())
                 ])
     except Exception as e:
-        print(f"X 유튜브 수집 중 오류: {e}")
+        print(f"X 유튜브 데이터 수집 중 오류: {e}")
         return
 
     # 4. 시트에 쓰기
     try:
         if all_rows:
-            # 점수 높은 순 정렬
             all_rows.sort(key=lambda x: x[7], reverse=True)
-            
             header = ["ID", "크리에이터", "분류", "제목", "링크", "조회수", "좋아요", "점수", "날짜"]
-            
-            # 시트 싹 비우기
             sheet.clear()
-            
-            # 데이터 넣기
-            data_to_update = [header] + all_rows
-            sheet.update(data_to_update, 'A1')
-            print(f"3. 완료: {len(all_rows)}개의 데이터를 시트에 적었습니다!")
+            sheet.update([header] + all_rows, 'A1')
+            print(f"4. 완료: {len(all_rows)}개의 데이터를 시트에 적었습니다!")
         else:
             print("X 수집된 데이터가 0개입니다.")
     except Exception as e:
